@@ -58,6 +58,7 @@
 {# ── Provider brand registry ──────────────────────────────────────────────── #}
 {% set PROV = {
   "openai":      {"color":"#10a37f","label":"OAI","desc":"GPT-5.4 · o3 · GPT-4o",      "icon":"dark/openai"},
+  "openai-codex": {"color":"#10a37f","label":"CDX","desc":"Experimental Codex OAuth",       "icon":"dark/openai"},
   "anthropic":   {"color":"#D4581A","label":"ANT","desc":"Claude 4 · Claude 3.5",       "icon":"light/claude-color"},
   "google":      {"color":"#4285F4","label":"GGL","desc":"Gemini 3 · 2.5 · 2.0",        "icon":"light/gemini-color"},
   "xai":         {"color":"#BBBBBB","label":"xAI","desc":"Grok 4 · Grok 2",             "icon":"dark/grok"},
@@ -556,8 +557,8 @@
         </div>
 
         <div class="form-control mb-1">
-            <label class="label py-1"><span class="label-text text-xs">API Key <span class="text-base-content/40" id="key-label-extra">(or base URL for lmstudio)</span></span></label>
-            <input type="password" id="add-prov-key" class="input input-bordered input-sm font-mono" placeholder="sk-…" autocomplete="off">
+            <label class="label py-1"><span class="label-text text-xs" id="key-label-main">API Key / OAuth token <span class="text-base-content/40" id="key-label-extra">(or base URL for lmstudio)</span></span></label>
+            <input type="password" id="add-prov-key" class="input input-bordered input-sm font-mono" placeholder="sk-… / OAuth bearer token" autocomplete="off">
         </div>
         <p id="prov-hint" class="text-xs text-base-content/35 mb-4 font-mono mt-1 truncate"></p>
 
@@ -618,6 +619,7 @@ function _showConfirm(title, body, confirmLabel) {
 
 var PROV_META = {
     openai:     {color:'#10a37f', label:'OAI', hint:'platform.openai.com/api-keys'},
+    'openai-codex': {color:'#10a37f', label:'CDX', hint:'Experimental: paste OAuth access token only; do not paste cookies/session dumps'},
     anthropic:  {color:'#D4581A', label:'ANT', hint:'console.anthropic.com/settings/keys'},
     google:     {color:'#4285F4', label:'GGL', hint:'aistudio.google.com/app/apikey'},
     xai:        {color:'#BBBBBB', label:'xAI', hint:'console.x.ai'},
@@ -697,7 +699,19 @@ window.selectProvider = function(btn) {
 
     var meta = PROV_META[name] || {};
     var hint = document.getElementById('prov-hint');
+    var keyInput = document.getElementById('add-prov-key');
+    var labelExtra = document.getElementById('key-label-extra');
     if (hint) hint.textContent = meta.hint || '';
+    if (keyInput) {
+        if (name === 'openai-codex') keyInput.placeholder = 'OAuth access token only';
+        else if (name === 'lmstudio') keyInput.placeholder = 'http://localhost:1234';
+        else keyInput.placeholder = 'sk-… / API key';
+    }
+    if (labelExtra) {
+        if (name === 'openai-codex') labelExtra.textContent = '(access token only)';
+        else if (name === 'lmstudio') labelExtra.textContent = '(base URL)';
+        else labelExtra.textContent = '(or base URL for lmstudio)';
+    }
 
     document.getElementById('prov-dropdown').style.display = 'none';
 };
@@ -754,7 +768,7 @@ function _preselectProvider(name) {
 window.addProvider = async function() {
     var name = document.getElementById('add-prov-name').value;
     var key  = document.getElementById('add-prov-key').value.trim();
-    if (!key) { WaspToast.show('API key required', 'error'); return; }
+    if (!key) { WaspToast.show('Provider credential required', 'error'); return; }
     var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     try {
         var r = await fetch('/models/providers/add', {
@@ -776,7 +790,7 @@ window.addProvider = async function() {
 
 // ── Remove provider ────────────────────────────────────────────────────────
 window.removeProvider = async function(name) {
-    if (!await _showConfirm('Remove provider', 'Remove "' + name + '"? This will delete your API key for this provider.', 'Remove')) return;
+    if (!await _showConfirm('Remove provider', 'Remove "' + name + '"? This will delete the saved credential for this provider.', 'Remove')) return;
     var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     try {
         var r = await fetch('/models/providers/remove', {

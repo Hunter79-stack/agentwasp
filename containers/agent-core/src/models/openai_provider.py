@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from datetime import datetime, timezone
 import time
 
 import httpx
@@ -28,6 +29,15 @@ OPENAI_MODELS = [
     # Legacy
     "gpt-4-turbo",
     "gpt-3.5-turbo",
+]
+# Codex OAuth is a distinct auth mode from API-key OpenAI.  Until the
+# OAuth-backed endpoint is fully exercised end-to-end, keep the catalog small
+# and conservative instead of implying parity with every OpenAI-compatible API.
+OPENAI_CODEX_MODELS = [
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-4o",
+    "gpt-4o-mini",
 ]
 XAI_MODELS = [
     # Grok 4
@@ -103,6 +113,146 @@ LMSTUDIO_MODELS  = []  # Dynamic — fetched from local /v1/models endpoint
 
 # Models that support image input
 _VISION_MODELS = {"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4-vision-preview"}
+
+
+def _parse_expires_at(value: str | int | float | None) -> float | None:
+    """Parse OAuth expiry metadata into epoch seconds.
+
+    Accepts either Unix epoch seconds or an ISO-8601 timestamp. Invalid values
+    are treated as already expired instead of crashing startup. That keeps the
+    process bootable while still failing closed before any model request is sent.
+    """
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except ValueError:
+        logger.warning("openai_codex.invalid_token_expiry", value="<redacted>")
+        return 0.0
+
+
+class OpenAICodexOAuthProvider(LLMProvider):
+    """Experimental OpenAI Codex OAuth provider.
+
+    This intentionally stays separate from API-key OpenAI so operators can see
+    which auth surface is active.  It accepts an OAuth access token and optional
+    expiry metadata, fails closed when missing/expired, and never attempts an
+    undocumented refresh flow.  Operators should re-auth and rotate the token
+    out-of-band until the OAuth handshake is implemented end-to-end.
+    """
+
+    _EXPIRY_SKEW_SECONDS = 60
+    fail_closed_on_unhealthy = True
+
+    def __init__(
+        self,
+        access_token: str = "",
+        base_url: str = "https://api.openai.com/v1",
+        models: list[str] | None = None,
+        default_model: str = "",
+        token_expires_at: str | int | float | None = None,
+        account_label: str = "",
+    ):
+        self._access_token = (access_token or "").strip()
+        # ModelManager and the dashboard already know how to mask `_api_key`.
+        # Keep this compatibility alias, but all public labels say OAuth token.
+        self._api_key = self._access_token
+        self._base_url = base_url.rstrip("/")
+        self._models = models or OPENAI_CODEX_MODELS
+        self._default_model = default_model or (self._models[0] if self._models else "")
+        self._token_expires_at = _parse_expires_at(token_expires_at)
+        self._account_label = account_label.strip()
+        self._healthy = False
+        self._inner_provider = OpenAICompatibleProvider(
+            api_key=self._access_token,
+            base_url=self._base_url,
+            provider_label="openai-codex",
+            models=self._models,
+            default_model=self._default_model,
+        )
+
+    def provider_name(self) -> str:
+        return "openai-codex"
+
+    def available_models(self) -> list[str]:
+        return self._models
+
+    def supports_vision(self, model: str = "") -> bool:
+        m = model or self._default_model
+        return any(v in m for v in _VISION_MODELS)
+
+    def supports_audio(self, model: str = "") -> bool:
+        # Whisper/API-key audio is supported by OpenAICompatibleProvider; Codex
+        # OAuth audio has not been validated and should not be advertised.
+        return False
+
+    def auth_status(self) -> dict:
+        """Return redacted status suitable for dashboards/logs/tests."""
+        return {
+            "provider": self.provider_name(),
+            "configured": bool(self._access_token),
+            "expired": self._token_is_expired(),
+            "expires_at": self._token_expires_at,
+            "account_label": self._account_label,
+        }
+
+    def _token_is_expired(self) -> bool:
+        return (
+            self._token_expires_at is not None
+            and self._token_expires_at <= time.time() + self._EXPIRY_SKEW_SECONDS
+        )
+
+    def _ensure_token_usable(self) -> None:
+        if not self._access_token:
+            raise RuntimeError(
+                "OpenAI Codex OAuth token is not configured. Re-authenticate "
+                "or configure OPENAI_API_KEY for the standard OpenAI provider."
+            )
+        if self._token_is_expired():
+            raise RuntimeError(
+                "OpenAI Codex OAuth token is expired or about to expire. "
+                "Re-authenticate before sending model requests."
+            )
+
+    async def health_check(self) -> bool:
+        try:
+            self._ensure_token_usable()
+        except RuntimeError:
+            self._healthy = False
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{self._base_url}/models",
+                    headers={"Authorization": f"Bearer {self._access_token}"},
+                )
+                self._healthy = resp.status_code == 200
+                return self._healthy
+        except Exception as e:
+            logger.debug("openai_codex.health_check.failed", error=str(e))
+            self._healthy = False
+            return False
+
+    async def generate(self, request: ModelRequest) -> ModelResponse:
+        self._ensure_token_usable()
+        # Delegate request formatting and OpenAI-compatible response parsing to
+        # the battle-tested API-key provider, but keep the provider label and
+        # auth status distinct.
+        return await self._inner_provider.generate(request)
 
 
 class OpenAICompatibleProvider(LLMProvider):

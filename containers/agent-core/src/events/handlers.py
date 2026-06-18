@@ -2414,6 +2414,7 @@ _API_KEY_PATTERNS = [
 
 PROVIDER_LABELS = {
     "openai": "OpenAI",
+    "openai-codex": "OpenAI Codex OAuth",
     "anthropic": "Anthropic",
     "google": "Google Gemini",
     "xai": "xAI (Grok)",
@@ -3611,11 +3612,11 @@ class EventHandler:
                     if _is_es:
                         lines.append("⚠️  No hay un modelo activo.")
                         lines.append("  Usa /api set anthropic <key> para configurar una API key.")
-                        lines.append("  Proveedores disponibles: anthropic, openai, google, xai")
+                        lines.append("  Proveedores disponibles: anthropic, openai, openai-codex, google, xai")
                     else:
                         lines.append("⚠️  No model is active.")
                         lines.append("  Use /api set anthropic <key> to configure an API key.")
-                        lines.append("  Available providers: anthropic, openai, google, xai")
+                        lines.append("  Available providers: anthropic, openai, openai-codex, google, xai")
                     lines.append("")
                 if not gmail_ok:
                     if _is_es:
@@ -8468,7 +8469,7 @@ class EventHandler:
             )
 
     async def _configure_api_key(self, provider: str, api_key: str) -> str:
-        """Store an API key in Redis and register the provider."""
+        """Store a provider credential in Redis and register the provider."""
         label = PROVIDER_LABELS.get(provider, provider)
         try:
             redis_url = getattr(self.model_manager, "redis_url", None)
@@ -8487,8 +8488,8 @@ class EventHandler:
                 )
             else:
                 return (
-                    f"{label} key saved but health check failed.\n"
-                    "The key may be invalid or the service is down."
+                    f"{label} credential saved but health check failed.\n"
+                    "The credential may be invalid, expired, or the service is down."
                 )
         except Exception as e:
             logger.exception("api_key.configure_failed", provider=provider)
@@ -8509,20 +8510,20 @@ class EventHandler:
                     status = "Connected" if p["healthy"] else "Unhealthy"
                     models = f" ({len(p['models'])} models)" if p["models"] else ""
                     lines.append(f"  {label}: {status}{models}")
-                    lines.append(f"    Key: {p['masked_key']}")
+                    lines.append(f"    Credential: {p['masked_key']}")
                 else:
                     lines.append(f"  {label}: Not configured")
-            lines.append(f"\nUse /api set <provider> <key> to configure.")
-            lines.append(f"Providers: openai, anthropic, google, xai")
+            lines.append(f"\nUse /api set <provider> <credential> to configure.")
+            lines.append(f"Providers: openai, openai-codex, anthropic, google, xai")
             return "\n".join(lines)
 
         elif subcmd == "set":
             if len(args) < 3:
-                return "Usage: /api set <provider> <key>\nProviders: openai, anthropic, google, xai"
+                return "Usage: /api set <provider> <credential>\nProviders: openai, openai-codex, anthropic, google, xai"
             provider = args[1].lower()
             api_key = args[2]
             if provider not in PROVIDER_LABELS:
-                return f"Unknown provider: {provider}\nAvailable: openai, anthropic, google, xai"
+                return f"Unknown provider: {provider}\nAvailable: openai, openai-codex, anthropic, google, xai"
             return await self._configure_api_key(provider, api_key)
 
         elif subcmd == "remove":
@@ -8561,10 +8562,10 @@ class EventHandler:
             return (
                 "API Commands:\n"
                 "/api list - Show configured providers\n"
-                "/api set <provider> <key> - Configure API key\n"
-                "/api remove <provider> - Remove API key\n"
+                "/api set <provider> <credential> - Configure provider credential\n"
+                "/api remove <provider> - Remove provider credential\n"
                 "/api test <provider> - Test connection\n"
-                "\nProviders: openai, anthropic, google, xai\n"
+                "\nProviders: openai, openai-codex, anthropic, google, xai\n"
                 "\nTip: You can also just paste an API key in chat!"
             )
 

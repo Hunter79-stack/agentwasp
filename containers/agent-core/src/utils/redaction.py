@@ -12,6 +12,10 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     # OpenAI — sk-proj-... (new format) and sk-... (classic)
     (re.compile(r'\bsk-proj-[A-Za-z0-9_-]{20,}\b'), 'sk-proj-***REDACTED***'),
     (re.compile(r'\bsk-[A-Za-z0-9]{20,}\b'), 'sk-***REDACTED***'),
+    # OAuth / OIDC tokens commonly copied from browser or CLI sessions.
+    (re.compile(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b'), 'jwt-***REDACTED***'),
+    (re.compile(r'(?i)(?:oauth[-_]?token|refresh[-_]?token|session[-_]?token|id[-_]?token)["\s:=]+[A-Za-z0-9._\-]{20,}'),
+     'oauth_token=***REDACTED***'),
     # Anthropic — sk-ant-api03-...
     (re.compile(r'\bsk-ant-[A-Za-z0-9_-]{20,}\b'), 'sk-ant-***REDACTED***'),
     # Google AI / Gemini — AIza... (real keys are AIza + 33-39 alphanumeric chars)

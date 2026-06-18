@@ -29,12 +29,14 @@ The installer will ask:
 | Timezone | Your IANA timezone, e.g. `America/Santiago`, `Europe/Berlin` |
 | Telegram bot token | From [@BotFather](https://t.me/BotFather) — or leave blank to disable Telegram entirely |
 | Your Telegram user ID | **Required if you set a bot token.** Numeric 5–15 digits (get it from [@userinfobot](https://t.me/userinfobot)). The wizard replicates it to both `TELEGRAM_ALLOWED_USERS` and `SCHEDULER_NOTIFY_CHAT_ID`. There is no public-bot mode. |
-| Default LLM provider | `anthropic`, `openai`, `xai`, or `google` (or `ollama` for fully self-hosted) |
-| Provider API key | Your key for the provider above |
+| Default LLM provider | `anthropic`, `openai`, `openai-codex`, `xai`, or `google` (or `ollama` for fully self-hosted) |
+| Provider API key / OAuth token | Your key for the provider above. `openai-codex` is experimental OAuth bearer-token mode; use `OPENAI_API_KEY`/`openai` for normal OpenAI API billing. |
 | Dashboard username | Anything (default: `admin`) |
 | Dashboard password | A strong password — saved to `.env`, used to log in |
 
 You can re-run `wasp onboard` any time to change values.
+
+If you choose `openai-codex`, configure only the OAuth access token and optional expiry metadata; do not paste browser cookies, refresh tokens, or full session dumps into onboarding, chat, or GitHub support threads.
 
 ## 3. Open the dashboard
 

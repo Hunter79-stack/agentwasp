@@ -93,7 +93,7 @@ wasp health      # run health probes
 - Linux x86_64 (Ubuntu 22.04+ / Debian 12+ recommended) — or macOS / Windows via WSL2.
 - 4 GB RAM minimum, 8 GB recommended.
 - 10 GB free disk.
-- At least one LLM provider key (Anthropic / OpenAI / xAI / Google) — or Ollama for fully self-hosted (slower with small models; see [STATUS_AND_LIMITS.md](docs/STATUS_AND_LIMITS.md)).
+- At least one LLM provider credential (Anthropic / OpenAI API key / experimental OpenAI Codex OAuth token / xAI / Google) — or Ollama for fully self-hosted (slower with small models; see [STATUS_AND_LIMITS.md](docs/STATUS_AND_LIMITS.md)).
 
 ## Installer flags
 

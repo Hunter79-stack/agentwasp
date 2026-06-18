@@ -57,6 +57,13 @@ This document is the **honest** map of what works, what's experimental, and what
 | CPI monitor (cognitive pressure index) | Stable | 5-min cadence; pauses heavy jobs when >80. |
 | Self-integrity monitor | Stable | 6h cadence; cross-checks self-model vs actual rates. |
 
+## LLM providers
+
+| Provider | Status | Notes |
+|---|---|---|
+| `openai` (`OPENAI_API_KEY`) | Beta | API-key path is implemented through the OpenAI-compatible provider. |
+| `openai-codex` (`OPENAI_CODEX_ACCESS_TOKEN`) | Experimental | OAuth bearer-token mode is wired as a separate provider and fails closed when missing/expired or failing during generation. Refresh/browser login is not automated in this release; the default `OPENAI_CODEX_BASE_URL` is conservative and may need an operator override for the real Codex OAuth surface. Re-auth out-of-band and never paste cookies/session blobs into logs or issues. |
+
 ## Integrations
 
 40+ integration connectors are present (Slack, Discord, Telegram, WhatsApp, Notion, GitHub, Google Calendar, Spotify, Trello, etc.). Each is **Beta** at minimum — connector code is implemented but the OAuth/setup flow has been exercised only for a subset:

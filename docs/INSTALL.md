@@ -89,12 +89,18 @@ See `.env.example` for the canonical, commented list. Highlights:
 | `SCHEDULER_NOTIFY_CHAT_ID` | Chat ID where the scheduler sends proactive notifications. The wizard replicates `TELEGRAM_ALLOWED_USERS` here so notifications reach the operator. |
 | `GMAIL_RECIPIENT_ALLOWLIST` | Comma-separated emails (`alice@example.com`) or domains (`@company.com`). When set, the `gmail send` skill refuses to email anyone not on the list. Empty = no restriction. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `XAI_API_KEY` / `GOOGLE_API_KEY` | At least one required (or use Ollama for fully self-hosted). |
-| `DEFAULT_PROVIDER` | `anthropic` (default) / `openai` / `xai` / `google` / `ollama`. |
+| `OPENAI_CODEX_ACCESS_TOKEN` | Optional experimental OpenAI Codex OAuth bearer token. Separate from `OPENAI_API_KEY`; fails closed when missing or expired. |
+| `OPENAI_CODEX_TOKEN_EXPIRES_AT` | Optional Unix epoch seconds or ISO-8601 timestamp used to fail closed before an OAuth token expires. |
+| `OPENAI_CODEX_BASE_URL` | Optional OpenAI-compatible endpoint for the Codex OAuth provider. Defaults to `https://api.openai.com/v1`. |
+| `OPENAI_CODEX_ACCOUNT_LABEL` | Optional non-secret label shown in provider status so operators can tell which OAuth account is configured. |
+| `DEFAULT_PROVIDER` | `anthropic` (default) / `openai` / `openai-codex` / `xai` / `google` / `ollama`. |
 | `LOG_LEVEL` | `INFO` (default), `DEBUG`, `WARNING`. |
 | `SOVEREIGN_MODE` | `true` (default) — full skill round budget + operator prime block. |
 | `WASP_HOST_DIR` | Path on the host where WASP is installed. Used by the agent's self-repair prompts so they reference the correct rebuild directory. The installer / wizard sets this automatically. |
 
 After editing `.env`, apply changes with `wasp restart`.
+
+`OPENAI_CODEX_ACCESS_TOKEN` is deliberately treated as an experimental bearer token input, not as a complete browser-session import. Do not put refresh tokens, cookies, or full session blobs in logs, GitHub issues, screenshots, or support output. If `OPENAI_CODEX_TOKEN_EXPIRES_AT` is set and the token is expired or within the safety window, WASP fails closed and asks for re-auth instead of silently falling back to another paid provider.
 
 ## Uninstall
 

@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 router = APIRouter()
 
 _ALL_PROVIDER_NAMES = [
-    "openai", "anthropic", "google", "xai",
+    "openai", "openai-codex", "anthropic", "google", "xai",
     "mistral", "deepseek", "openrouter", "perplexity", "huggingface", "lmstudio", "moonshot",
 ]
 
@@ -111,15 +111,15 @@ async def add_provider(request: Request):
     except Exception:
         return JSONResponse({"ok": False, "error": "Invalid JSON"}, status_code=400)
     name = (body.get("name") or "").strip().lower()
-    api_key = (body.get("api_key") or "").strip()
-    if not name or not api_key:
-        return JSONResponse({"ok": False, "error": "name and api_key are required"}, status_code=400)
+    credential = (body.get("api_key") or "").strip()
+    if not name or not credential:
+        return JSONResponse({"ok": False, "error": "name and provider credential are required"}, status_code=400)
     model_manager = request.app.state.model_manager
-    result = await model_manager.register_provider(name, api_key)
-    # Persist to Redis so key survives container restarts
+    result = await model_manager.register_provider(name, credential)
+    # Persist to Redis so credential survives container restarts
     try:
         r = await _get_redis(request)
-        await r.hset("apikeys", name, api_key)
+        await r.hset("apikeys", name, credential)
     except Exception:
         pass
     return JSONResponse(result)

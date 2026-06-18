@@ -43,11 +43,18 @@ You need **at least one** of:
 | Variable | Provider |
 |---|---|
 | `ANTHROPIC_API_KEY` | Anthropic Claude |
-| `OPENAI_API_KEY` | OpenAI |
+| `OPENAI_API_KEY` | OpenAI API-key provider |
+| `OPENAI_CODEX_ACCESS_TOKEN` | Experimental OpenAI Codex OAuth bearer-token provider (`openai-codex`) |
+| `OPENAI_CODEX_TOKEN_EXPIRES_AT` | Optional epoch seconds / ISO-8601 expiry for fail-closed OAuth handling |
+| `OPENAI_CODEX_BASE_URL` | Optional OpenAI-compatible base URL for Codex OAuth mode |
 | `XAI_API_KEY` | xAI Grok |
 | `GOOGLE_API_KEY` | Google Gemini |
 
 Or set `DEFAULT_PROVIDER=local` and pull a model with `docker exec agent-ollama ollama pull <model>`.
+
+:::caution Experimental OAuth mode
+`openai-codex` is not the same as `openai`. Use `OPENAI_API_KEY` for the normal OpenAI API-key provider. Use `OPENAI_CODEX_ACCESS_TOKEN` only for an OAuth bearer token you have obtained out-of-band; the current release does not automate browser login or token refresh and will fail closed when the optional expiry says the token is expired.
+:::
 
 ## Integrations (optional)
 
@@ -104,7 +111,7 @@ These default to `true` and can be overridden at runtime via the dashboard `/con
 - `DASHBOARD_SECRET` ≥ 16 chars (≥ 32 recommended; the installer generates 64).
 - `MEDIA_SIGNING_SECRET` minimum entropy unless `media_signing_debug=true` (the validator checks character distribution).
 - `POSTGRES_PASSWORD` non-empty.
-- At least one model API key present, OR `DEFAULT_PROVIDER=local`.
+- At least one model API key/OAuth access token present, OR `DEFAULT_PROVIDER=local`.
 - If `TELEGRAM_BOT_TOKEN` is set, `TELEGRAM_ALLOWED_USERS` must also be set (fail-closed; checked in the Telegram bridge container, not core).
 
 A failed validation prints the error and exits non-zero.
@@ -115,14 +122,14 @@ A failed validation prints the error and exits non-zero.
 2. Pydantic Settings reads env vars at startup.
 3. After `init_db()`, the `config:overrides` Redis key is read and supported flag overrides are applied via `setattr()` — this is how the `/config` dashboard page persists changes across restarts.
 
-## Setting model API keys after start
+## Setting model credentials after start
 
-You can add or rotate keys without restarting:
+You can add or rotate keys/tokens without restarting:
 
 - Dashboard: `/models` page → "Add API Key".
-- Telegram: `/api set <provider> <key>` (e.g. `/api set anthropic sk-ant-...`).
+- Telegram: `/api set <provider> <credential>` (e.g. `/api set anthropic sk-ant-...` or `/api set openai-codex <oauth-access-token>`).
 
-Keys are encrypted by the `SecretVault` and persisted to the `integration_secrets` table. They survive container restarts.
+Never paste refresh tokens, browser cookies, or complete session exports into chat. For `openai-codex`, rotate the bearer token out-of-band and set `OPENAI_CODEX_TOKEN_EXPIRES_AT` when you know the expiry so WASP can fail closed instead of attempting stale auth.
 
 ## See also
 

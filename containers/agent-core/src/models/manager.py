@@ -13,6 +13,7 @@ from .types import ModelRequest, ModelResponse
 # the operator has not yet picked anything.
 STARTER_MODEL = {
     "openai":     "gpt-4o-mini",
+    "openai-codex": "gpt-4o-mini",
     "anthropic":  "claude-haiku-4-5-20251001",
     "google":     "gemini-2.0-flash",
     "xai":        "grok-4-1-fast-non-reasoning",
@@ -241,8 +242,17 @@ class ModelManager:
             if not provider:
                 continue
 
-            if not await self._health_check_cached(provider_name):
+            healthy = await self._health_check_cached(provider_name)
+            if not healthy:
                 logger.warning("model_manager.provider_unhealthy", provider=provider_name)
+                if (
+                    provider_name == self.active_provider
+                    and getattr(provider, "fail_closed_on_unhealthy", False)
+                ):
+                    raise RuntimeError(
+                        f"Active provider {provider_name} failed authentication/health check; "
+                        "refusing fallback to avoid silently using another provider."
+                    )
                 continue
 
             # On fallback, use the provider's default model instead of the
@@ -309,6 +319,14 @@ class ModelManager:
                         self.invalidate_health_cache(provider_name)
                         request.model = original_model
                         request.messages = original_messages
+                        if (
+                            provider_name == self.active_provider
+                            and getattr(provider, "fail_closed_on_unhealthy", False)
+                        ):
+                            raise RuntimeError(
+                                f"Active provider {provider_name} failed during generation; "
+                                "refusing fallback to avoid silently using another provider."
+                            ) from e
                         break  # Move to next provider
 
         raise RuntimeError("All LLM providers failed. No model available.")
@@ -516,7 +534,8 @@ class ModelManager:
     def auto_detect_providers(self, settings) -> None:
         """Register remote providers based on available API keys."""
         from .openai_provider import (
-            OpenAICompatibleProvider, OPENAI_MODELS, XAI_MODELS,
+            OpenAICompatibleProvider, OpenAICodexOAuthProvider,
+            OPENAI_MODELS, OPENAI_CODEX_MODELS, XAI_MODELS,
             MISTRAL_MODELS, DEEPSEEK_MODELS, OPENROUTER_MODELS,
             PERPLEXITY_MODELS, HUGGINGFACE_MODELS, LMSTUDIO_MODELS, MOONSHOT_MODELS,
         )
@@ -531,6 +550,17 @@ class ModelManager:
             )
             self.fallback_order.append("openai")
             logger.info("model_manager.provider_registered", provider="openai")
+
+        if getattr(settings, "openai_codex_access_token", ""):
+            self.providers["openai-codex"] = OpenAICodexOAuthProvider(
+                access_token=settings.openai_codex_access_token,
+                base_url=getattr(settings, "openai_codex_base_url", "https://api.openai.com/v1"),
+                models=OPENAI_CODEX_MODELS,
+                token_expires_at=getattr(settings, "openai_codex_token_expires_at", ""),
+                account_label=getattr(settings, "openai_codex_account_label", ""),
+            )
+            self.fallback_order.append("openai-codex")
+            logger.info("model_manager.provider_registered", provider="openai-codex")
 
         if settings.xai_api_key:
             self.providers["xai"] = OpenAICompatibleProvider(
@@ -635,7 +665,8 @@ class ModelManager:
     async def register_provider(self, name: str, api_key: str) -> dict:
         """Register or update a remote provider at runtime. Returns status dict."""
         from .openai_provider import (
-            OpenAICompatibleProvider, OPENAI_MODELS, XAI_MODELS,
+            OpenAICompatibleProvider, OpenAICodexOAuthProvider,
+            OPENAI_MODELS, OPENAI_CODEX_MODELS, XAI_MODELS,
             MISTRAL_MODELS, DEEPSEEK_MODELS, OPENROUTER_MODELS,
             PERPLEXITY_MODELS, HUGGINGFACE_MODELS, MOONSHOT_MODELS,
         )
@@ -645,6 +676,9 @@ class ModelManager:
         factories = {
             "openai": lambda k: OpenAICompatibleProvider(
                 api_key=k, provider_label="openai", models=OPENAI_MODELS,
+            ),
+            "openai-codex": lambda k: OpenAICodexOAuthProvider(
+                access_token=k, models=OPENAI_CODEX_MODELS,
             ),
             "xai": lambda k: OpenAICompatibleProvider(
                 api_key=k, base_url="https://api.x.ai/v1",
@@ -728,11 +762,12 @@ class ModelManager:
         from .anthropic_provider import ANTHROPIC_MODELS
         from .google_provider import GOOGLE_MODELS
         from .openai_provider import (
-            OPENAI_MODELS, XAI_MODELS, MISTRAL_MODELS, DEEPSEEK_MODELS,
+            OPENAI_MODELS, OPENAI_CODEX_MODELS, XAI_MODELS, MISTRAL_MODELS, DEEPSEEK_MODELS,
             MOONSHOT_MODELS, OPENROUTER_MODELS, PERPLEXITY_MODELS, HUGGINGFACE_MODELS,
         )
         _catalogs: dict[str, list[str]] = {
             "openai": OPENAI_MODELS,
+            "openai-codex": OPENAI_CODEX_MODELS,
             "anthropic": ANTHROPIC_MODELS,
             "google": GOOGLE_MODELS,
             "xai": XAI_MODELS,
@@ -745,7 +780,7 @@ class ModelManager:
             "lmstudio": [],
         }
         all_names = [
-            "openai", "anthropic", "google", "xai",
+            "openai", "openai-codex", "anthropic", "google", "xai",
             "mistral", "deepseek", "moonshot", "openrouter", "perplexity", "huggingface", "lmstudio",
         ]
 
@@ -756,10 +791,17 @@ class ModelManager:
                 return {
                     "name": name, "configured": False,
                     "healthy": False, "masked_key": "", "models": catalog,
+                    "auth_status": {},
                 }
             healthy = await self._health_check_cached(name)
             key = getattr(provider, "_api_key", "")
-            masked = self._mask_key(key) if key else ""
+            auth_status_fn = getattr(provider, "auth_status", None)
+            auth_status = auth_status_fn() if callable(auth_status_fn) else {}
+            if name == "openai-codex" and key:
+                # OAuth/JWT bearer tokens should not reveal prefix/suffix material.
+                masked = "oauth-***REDACTED***"
+            else:
+                masked = self._mask_key(key) if key else ""
             # Always show full model list; use live list when healthy, catalog otherwise
             models = provider.available_models() if healthy else catalog
             return {
@@ -768,6 +810,7 @@ class ModelManager:
                 "healthy": healthy,
                 "masked_key": masked,
                 "models": models,
+                "auth_status": auth_status,
             }
 
         return list(await asyncio.gather(*[_check_one(n) for n in all_names]))
